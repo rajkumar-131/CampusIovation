@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import PeerChatModal from './PeerChatModal'
 import {
   fetchActiveStudents,
   fetchProfiles,
@@ -125,6 +126,9 @@ export default function CampusConnect() {
   const [requestMessage, setRequestMessage] = useState('')
   const [sendingRequest, setSendingRequest] = useState(false)
   const [requestFeedback, setRequestFeedback] = useState(null) // { type: 'success' | 'error', text: '' }
+
+  // Peer-to-peer active chat connection modal
+  const [activeChatConnection, setActiveChatConnection] = useState(null)
 
   // ── Load active students directory ─────────────────────────────────────────
   const loadActiveStudents = useCallback(async () => {
@@ -1145,6 +1149,14 @@ export default function CampusConnect() {
                       <span>Connected since:</span>
                       <span>{conn.connected_since.split(' ')[0]}</span>
                     </div>
+
+                    <button
+                      onClick={() => setActiveChatConnection(conn)}
+                      className="w-full mt-2 py-2 px-3 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-sm shadow-emerald-600/20 active:scale-98"
+                    >
+                      <span>💬</span>
+                      <span>Chat with {peer.name.split(' ')[0]}</span>
+                    </button>
                   </div>
                 )
               })}
@@ -1221,6 +1233,14 @@ export default function CampusConnect() {
             </form>
           </div>
         </div>
+      )}
+      {/* ── PEER-TO-PEER CHAT MODAL ────────────────────────────────────── */}
+      {activeChatConnection && (
+        <PeerChatModal
+          connection={activeChatConnection}
+          currentProfileId={currentProfileId}
+          onClose={() => setActiveChatConnection(null)}
+        />
       )}
     </div>
   )

@@ -54,6 +54,8 @@ from models import (
     ConnectionRequestAction,
     ConnectionRequestOut,
     ConnectionOut,
+    PeerMessageCreate,
+    PeerMessageOut,
     ChatRequest,
     ChatResponse,
 )
@@ -907,3 +909,104 @@ def get_connection_status_map(profile_id: int = Query(..., description="Student 
                 status_map[target_id] = "REJECTED"
 
     return status_map
+
+
+# =============================================================================
+# CAMPUS CONNECT: PEER-TO-PEER CHAT ROUTES
+# =============================================================================
+
+@app.get("/api/connect/messages/{connection_id}", response_model=list[PeerMessageOut], tags=["Peer Chat"])
+def get_peer_messages(
+    connection_id: int,
+    profile_id: int = Query(..., description="Student profile ID of the participant requesting messages"),
+):
+    """Fetch chat history for an accepted peer-to-peer connection and mark incoming messages as read."""
+    with get_connection() as conn:
+        # Verify connection exists and is accepted
+        req = conn.execute(
+            "SELECT * FROM connection_requests WHERE id = ?",
+            (connection_id,),
+        ).fetchone()
+
+        if not req:
+            raise HTTPException(status_code=404, detail="Connection not found")
+        if req["status"] != "ACCEPTED":
+            raise HTTPException(status_code=400, detail="Cannot chat: connection is not accepted")
+        if profile_id not in (req["sender_id"], req["receiver_id"]):
+            raise HTTPException(status_code=403, detail="Not authorized to access messages for this connection")
+
+        # Mark messages received by profile_id as read
+        conn.execute(
+            "UPDATE peer_messages SET is_read = 1 WHERE connection_id = ? AND receiver_id = ? AND is_read = 0",
+            (connection_id, profile_id),
+        )
+        conn.commit()
+
+        # Fetch messages
+        rows = conn.execute(
+            """
+            SELECT id, connection_id, sender_id, receiver_id, content, is_read, created_at
+            FROM peer_messages
+            WHERE connection_id = ?
+            ORDER BY id ASC
+            """,
+            (connection_id,),
+        ).fetchall()
+
+    return [
+        PeerMessageOut(
+            id=r["id"],
+            connection_id=r["connection_id"],
+            sender_id=r["sender_id"],
+            receiver_id=r["receiver_id"],
+            content=r["content"],
+            is_read=bool(r["is_read"]),
+            created_at=str(r["created_at"]),
+        )
+        for r in rows
+    ]
+
+
+@app.post("/api/connect/messages/{connection_id}", response_model=PeerMessageOut, status_code=201, tags=["Peer Chat"])
+def send_peer_message(
+    connection_id: int,
+    payload: PeerMessageCreate,
+):
+    """Send a new message to a connected peer."""
+    with get_connection() as conn:
+        req = conn.execute(
+            "SELECT * FROM connection_requests WHERE id = ?",
+            (connection_id,),
+        ).fetchone()
+
+        if not req:
+            raise HTTPException(status_code=404, detail="Connection not found")
+        if req["status"] != "ACCEPTED":
+            raise HTTPException(status_code=400, detail="Cannot send message: connection is not accepted")
+        if payload.sender_id not in (req["sender_id"], req["receiver_id"]):
+            raise HTTPException(status_code=403, detail="Sender is not a participant in this connection")
+
+        receiver_id = req["receiver_id"] if payload.sender_id == req["sender_id"] else req["sender_id"]
+
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        cur = conn.execute(
+            """
+            INSERT INTO peer_messages (connection_id, sender_id, receiver_id, content, is_read, created_at)
+            VALUES (?, ?, ?, ?, 0, ?)
+            """,
+            (connection_id, payload.sender_id, receiver_id, payload.content.strip(), now_str),
+        )
+        conn.commit()
+        msg_id = cur.lastrowid
+
+    return PeerMessageOut(
+        id=msg_id,
+        connection_id=connection_id,
+        sender_id=payload.sender_id,
+        receiver_id=receiver_id,
+        content=payload.content.strip(),
+        is_read=False,
+        created_at=now_str,
+    )
+

@@ -274,6 +274,23 @@ class ConnectionOut(BaseModel):
     connected_since: str
 
 
+class PeerMessageCreate(BaseModel):
+    """Payload to send a message to a connected peer."""
+    sender_id: int = Field(..., description="Student profile ID sending the message")
+    content:   str = Field(..., min_length=1, max_length=1000, description="Chat message text")
+
+
+class PeerMessageOut(BaseModel):
+    """Output representation of a peer-to-peer message."""
+    id:            int
+    connection_id: int
+    sender_id:     int
+    receiver_id:   int
+    content:       str
+    is_read:       bool = False
+    created_at:    str
+
+
 # =============================================================================
 # CAMPUS AI CHAT ASSISTANT
 # =============================================================================

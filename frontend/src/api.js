@@ -403,3 +403,51 @@ export async function sendChatMessage(message, history = []) {
 
   return response.json();
 }
+
+// =============================================================================
+// CAMPUS CONNECT: PEER-TO-PEER CHAT
+// =============================================================================
+
+/**
+ * Fetch chat message history for an accepted peer connection
+ */
+export async function fetchPeerMessages(connectionId, profileId) {
+  const response = await fetchWithTimeout(
+    `${API_BASE}/connect/messages/${connectionId}?profile_id=${encodeURIComponent(profileId)}`,
+    {},
+    15000
+  );
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Failed to load messages (${response.status}): ${errorText}`);
+  }
+  return response.json();
+}
+
+/**
+ * Send a chat message to a connected peer
+ */
+export async function sendPeerMessage(connectionId, senderId, content) {
+  const response = await fetchWithTimeout(
+    `${API_BASE}/connect/messages/${connectionId}`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ sender_id: parseInt(senderId, 10), content }),
+    },
+    15000
+  );
+
+  if (!response.ok) {
+    let errorMessage = `Failed to send message (${response.status})`;
+    try {
+      const errorJson = await response.json();
+      if (errorJson.detail) errorMessage = errorJson.detail;
+    } catch {}
+    throw new Error(errorMessage);
+  }
+
+  return response.json();
+}
