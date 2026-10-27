@@ -96,6 +96,18 @@ class DBConnectionWrapper:
         else:
             return self.raw_conn.execute(sql, params)
 
+    def executemany(self, sql: str, params: Any = ()):
+        if self.is_postgres:
+            import re
+            pg_sql = re.sub(r':([a-zA-Z0-9_]+)', r'%(\1)s', sql)
+            pg_sql = pg_sql.replace("?", "%s")
+            pg_sql = pg_sql.replace("datetime('now', 'localtime')", "NOW()")
+            cur = self.raw_conn.cursor()
+            cur.executemany(pg_sql, params)
+            return cur
+        else:
+            return self.raw_conn.executemany(sql, params)
+
     def commit(self):
         self.raw_conn.commit()
 

@@ -6,7 +6,7 @@
 
 const rawBase = (
   import.meta.env.VITE_API_BASE_URL ||
-  'https://greencampus-ai-tfjl.onrender.com'
+  (import.meta.env.DEV ? 'http://127.0.0.1:8000' : 'https://greencampus-ai-tfjl.onrender.com')
 ).trim().replace(/\/+$/, '');
 
 const API_BASE = rawBase.endsWith('/api') ? rawBase : `${rawBase}/api`;

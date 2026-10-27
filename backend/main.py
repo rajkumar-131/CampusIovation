@@ -146,6 +146,11 @@ import os
 
 _ALLOWED_ORIGINS = [
     "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://localhost:8000",
+    "http://127.0.0.1:8000",
     "https://greencampus-ai-pi.vercel.app",
     "https://greencampus-c3vencflt-sayan-d154.vercel.app",
     "https://greencampus-jnelhrj5q-sayan-d154.vercel.app",
@@ -162,11 +167,38 @@ for _orig in _extra_env_origins:
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_ALLOWED_ORIGINS,
-    allow_origin_regex=r"^https://[a-zA-Z0-9_\-]+\.vercel\.app$",
+    allow_origin_regex=r"^(https?://(localhost|127\.0\.0\.1)(:[0-9]+)?|https://[a-zA-Z0-9_\-]+\.vercel\.app)$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# =============================================================================
+# ROOT & SYSTEM HEALTH ROUTES
+# =============================================================================
+
+@app.get("/", tags=["System"])
+def root():
+    return {
+        "status": "online",
+        "service": "GreenCampus AI Backend API",
+        "version": "1.3.0",
+        "frontend": "http://127.0.0.1:5173",
+        "docs": "/docs",
+        "health": "/api/health",
+        "message": "GreenCampus AI Backend is active and running successfully."
+    }
+
+@app.get("/api", tags=["System"])
+def api_root():
+    return {
+        "status": "online",
+        "service": "GreenCampus AI Backend API",
+        "version": "1.3.0",
+        "docs": "/docs",
+        "health": "/api/health"
+    }
 
 
 # =============================================================================
