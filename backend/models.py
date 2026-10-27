@@ -283,12 +283,20 @@ class PeerMessageCreate(BaseModel):
 class PeerMessageOut(BaseModel):
     """Output representation of a peer-to-peer message."""
     id:            int
-    connection_id: int
+    connection_id: Optional[int] = None
     sender_id:     int
     receiver_id:   int
     content:       str
     is_read:       bool = False
     created_at:    str
+
+
+class DirectConversationOut(BaseModel):
+    """Recent direct conversation thread preview."""
+    peer_profile:      StudentProfileOut
+    last_message:      Optional[str] = None
+    last_message_time: Optional[str] = None
+    unread_count:      int = 0
 
 
 # =============================================================================

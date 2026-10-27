@@ -13,6 +13,7 @@ import {
   respondToConnectionRequest,
   fetchMyConnections,
   fetchConnectionStatusMap,
+  fetchConversations,
 } from '../api'
 
 // Predefined activities with icons & labels
@@ -127,8 +128,10 @@ export default function CampusConnect() {
   const [sendingRequest, setSendingRequest] = useState(false)
   const [requestFeedback, setRequestFeedback] = useState(null) // { type: 'success' | 'error', text: '' }
 
-  // Peer-to-peer active chat connection modal
-  const [activeChatConnection, setActiveChatConnection] = useState(null)
+  // Peer-to-peer active chat
+  const [activeChatPeer, setActiveChatPeer] = useState(null)
+  const [conversations, setConversations] = useState([])
+  const [loadingConversations, setLoadingConversations] = useState(false)
 
   // ── Load active students directory ─────────────────────────────────────────
   const loadActiveStudents = useCallback(async () => {
@@ -171,6 +174,20 @@ export default function CampusConnect() {
     }
   }, [])
 
+  // ── Load Direct Conversations ──────────────────────────────────────────────
+  const loadConversationsData = useCallback(async (profId) => {
+    if (!profId) return
+    setLoadingConversations(true)
+    try {
+      const data = await fetchConversations(profId)
+      setConversations(data || [])
+    } catch (err) {
+      console.error('Failed to load conversations:', err)
+    } finally {
+      setLoadingConversations(false)
+    }
+  }, [])
+
   // ── Load profiles and current user profile ─────────────────────────────────
   const loadProfilesAndMyStatus = useCallback(async () => {
     try {
@@ -190,6 +207,7 @@ export default function CampusConnect() {
           setMyProfileData(detail.profile)
           setMyActiveAvailability(detail.active_availability)
           loadConnectionData(effectiveId)
+          loadConversationsData(effectiveId)
         } catch {
           setMyProfileData(null)
           setMyActiveAvailability(null)
@@ -770,6 +788,29 @@ export default function CampusConnect() {
             {connections.length}
           </span>
         </button>
+
+        <button
+          onClick={() => {
+            setActiveTab('direct_chats')
+            if (currentProfileId) loadConversationsData(currentProfileId)
+          }}
+          className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all flex items-center gap-2 ${
+            activeTab === 'direct_chats'
+              ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-sm'
+              : 'text-gray-600 hover:bg-gray-100'
+          }`}
+        >
+          <span>💬 Direct Messages</span>
+          {conversations.length > 0 ? (
+            <span className={`text-xs px-2 py-0.5 rounded-full ${activeTab === 'direct_chats' ? 'bg-white text-emerald-800' : 'bg-emerald-100 text-emerald-800'} font-bold`}>
+              {conversations.length}
+            </span>
+          ) : (
+            <span className="text-[10px] bg-emerald-100 text-emerald-800 px-1.5 py-0.2 rounded-full font-bold">
+              Direct
+            </span>
+          )}
+        </button>
       </div>
 
       {/* ── TAB 1: LIVE DIRECTORY ────────────────────────────────────────────── */}
@@ -932,24 +973,41 @@ export default function CampusConnect() {
 
                       {/* Step 2: Connection Action Bar */}
                       {!isMe && (
-                        <div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() =>
+                              setActiveChatPeer({
+                                id: student.profile_id,
+                                name: student.name,
+                                department: student.department,
+                                study_year: student.study_year,
+                                bio: student.bio,
+                                interests: student.interests,
+                              })
+                            }
+                            className="flex-1 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-sm shadow-emerald-600/20 active:scale-98"
+                            title={`Chat directly with ${student.name}`}
+                          >
+                            <span>💬</span>
+                            <span>Chat Directly</span>
+                          </button>
+
                           {connStatus === 'CONNECTED' ? (
-                            <div className="w-full py-1.5 bg-green-50 border border-green-200 text-green-700 rounded-xl text-xs font-semibold flex items-center justify-center gap-1">
-                              <span>✅ Connected</span>
-                            </div>
+                            <span className="px-2.5 py-2 bg-green-50 border border-green-200 text-green-700 rounded-xl text-xs font-bold" title="Connected">
+                              ✅
+                            </span>
                           ) : connStatus === 'PENDING_SENT' ? (
-                            <div className="w-full py-1.5 bg-amber-50 border border-amber-200 text-amber-700 rounded-xl text-xs font-semibold flex items-center justify-center gap-1">
-                              <span>⏳ Request Sent</span>
-                            </div>
+                            <span className="px-2.5 py-2 bg-amber-50 border border-amber-200 text-amber-700 rounded-xl text-xs font-bold" title="Request Sent">
+                              ⏳
+                            </span>
                           ) : connStatus === 'PENDING_RECEIVED' ? (
-                            <div className="flex gap-2">
-                              <button
-                                onClick={() => setActiveTab('requests')}
-                                className="flex-1 py-1.5 bg-green-600 text-white rounded-xl text-xs font-semibold hover:bg-green-700 transition-colors shadow-sm"
-                              >
-                                Accept Request
-                              </button>
-                            </div>
+                            <button
+                              onClick={() => setActiveTab('requests')}
+                              className="px-2.5 py-2 bg-emerald-100 text-emerald-800 rounded-xl text-xs font-bold"
+                              title="Accept pending request"
+                            >
+                              📥
+                            </button>
                           ) : (
                             <button
                               onClick={() => {
@@ -957,10 +1015,10 @@ export default function CampusConnect() {
                                 setRequestMessage(`Hi ${student.name}! Want to ${meta.label.toLowerCase()} together?`)
                                 setRequestFeedback(null)
                               }}
-                              className="w-full py-2 bg-green-600 text-white rounded-xl text-xs font-semibold hover:bg-green-700 transition-colors flex items-center justify-center gap-1.5 shadow-sm"
+                              className="px-2.5 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl text-xs font-semibold transition-colors"
+                              title="Send connection request"
                             >
-                              <span>🤝</span>
-                              <span>Connect to {meta.label}</span>
+                              🤝
                             </button>
                           )}
                         </div>
@@ -1151,12 +1209,149 @@ export default function CampusConnect() {
                     </div>
 
                     <button
-                      onClick={() => setActiveChatConnection(conn)}
+                      onClick={() => setActiveChatPeer(peer)}
                       className="w-full mt-2 py-2 px-3 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-sm shadow-emerald-600/20 active:scale-98"
                     >
                       <span>💬</span>
                       <span>Chat with {peer.name.split(' ')[0]}</span>
                     </button>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── TAB 4: DIRECT MESSAGES (CHAT WITH ANY FRIEND DIRECTLY) ─────────── */}
+      {activeTab === 'direct_chats' && (
+        <div className="space-y-6 animate-fade-in">
+          {/* Header Card with Friend Selector */}
+          <div className="bg-gradient-to-r from-emerald-50 via-teal-50 to-white rounded-2xl border border-emerald-200/80 p-5 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-2xl">💬</span>
+                <h3 className="text-base font-bold text-gray-800">Direct Peer Messages</h3>
+                <span className="text-[10px] bg-emerald-600 text-white px-2 py-0.5 rounded-full font-bold">
+                  Instant P2P
+                </span>
+              </div>
+              <p className="text-xs text-gray-600 max-w-xl">
+                Chat directly with your friends or any student on campus in real time. No connection approval required.
+              </p>
+            </div>
+
+            {/* Quick Friend Selector to start new chat */}
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-semibold text-gray-600 flex-shrink-0">Start Chat with:</span>
+              <select
+                onChange={(e) => {
+                  const targetId = parseInt(e.target.value, 10)
+                  if (!targetId) return
+                  const found = profiles.find(p => p.id === targetId)
+                  if (found) setActiveChatPeer(found)
+                  e.target.value = ''
+                }}
+                defaultValue=""
+                className="bg-white border border-gray-300 rounded-xl px-3 py-1.5 text-xs font-semibold text-gray-800 shadow-xs outline-none focus:ring-2 focus:ring-emerald-500"
+              >
+                <option value="" disabled>Select a student / friend…</option>
+                {profiles
+                  .filter(p => String(p.id) !== String(currentProfileId))
+                  .map(p => (
+                    <option key={p.id} value={p.id}>
+                      {p.name} ({p.department.split('&')[0].trim()})
+                    </option>
+                  ))}
+              </select>
+            </div>
+          </div>
+
+          {/* Conversation Cards List */}
+          {loadingConversations ? (
+            <div className="text-center py-16 text-gray-400">
+              <div className="inline-block animate-spin text-3xl mb-2">🌿</div>
+              <p className="text-xs font-semibold">Loading your conversations...</p>
+            </div>
+          ) : conversations.length === 0 ? (
+            <div className="text-center py-16 bg-white rounded-3xl border border-gray-200 p-8 shadow-sm space-y-4">
+              <div className="w-16 h-16 rounded-full bg-emerald-50 text-emerald-600 text-3xl flex items-center justify-center mx-auto">
+                💬
+              </div>
+              <div>
+                <h4 className="text-base font-bold text-gray-800">No messages yet</h4>
+                <p className="text-xs text-gray-400 max-w-md mx-auto mt-1 leading-relaxed">
+                  Start a conversation with a peer from the directory or pick a friend from the dropdown above to chat directly!
+                </p>
+              </div>
+
+              {/* Student quick-chips */}
+              <div className="pt-2">
+                <p className="text-xs font-bold text-gray-500 mb-2">Available students to message right now:</p>
+                <div className="flex flex-wrap justify-center gap-2">
+                  {profiles
+                    .filter(p => String(p.id) !== String(currentProfileId))
+                    .slice(0, 4)
+                    .map(p => (
+                      <button
+                        key={p.id}
+                        onClick={() => setActiveChatPeer(p)}
+                        className="px-3.5 py-1.5 bg-white border border-emerald-300 hover:bg-emerald-50 text-emerald-800 text-xs font-semibold rounded-xl transition shadow-2xs flex items-center gap-1.5"
+                      >
+                        <span>💬</span>
+                        <span>{p.name}</span>
+                      </button>
+                    ))}
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {conversations.map(conv => {
+                const peer = conv.peer_profile
+                return (
+                  <div
+                    key={peer.id}
+                    className="bg-white rounded-2xl border border-gray-200 p-4 shadow-sm hover:shadow-md transition-all space-y-3 flex flex-col justify-between"
+                  >
+                    <div>
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex items-center gap-2.5">
+                          <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-500 to-teal-500 text-white font-bold flex items-center justify-center text-sm shadow-sm">
+                            {peer.name.charAt(0)}
+                          </div>
+                          <div>
+                            <h4 className="font-bold text-gray-900 text-sm leading-tight">{peer.name}</h4>
+                            <p className="text-[11px] text-gray-500">{peer.study_year} • {peer.department.split('&')[0].trim()}</p>
+                          </div>
+                        </div>
+
+                        {conv.unread_count > 0 && (
+                          <span className="bg-emerald-600 text-white text-[10px] font-extrabold px-2 py-0.5 rounded-full animate-pulse">
+                            {conv.unread_count} new
+                          </span>
+                        )}
+                      </div>
+
+                      {conv.last_message && (
+                        <div className="mt-3 p-2.5 bg-gray-50 rounded-xl border border-gray-100 text-xs text-gray-600 italic line-clamp-2">
+                          &quot;{conv.last_message}&quot;
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="pt-2 border-t border-gray-100 flex items-center justify-between">
+                      <span className="text-[10px] text-gray-400 font-mono">
+                        {conv.last_message_time ? conv.last_message_time.split(' ')[1]?.substring(0, 5) : ''}
+                      </span>
+                      <button
+                        onClick={() => setActiveChatPeer(peer)}
+                        className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition shadow-sm flex items-center gap-1.5"
+                      >
+                        <span>💬</span>
+                        <span>Open Chat</span>
+                      </button>
+                    </div>
                   </div>
                 )
               })}
@@ -1235,11 +1430,14 @@ export default function CampusConnect() {
         </div>
       )}
       {/* ── PEER-TO-PEER CHAT MODAL ────────────────────────────────────── */}
-      {activeChatConnection && (
+      {activeChatPeer && (
         <PeerChatModal
-          connection={activeChatConnection}
+          peer={activeChatPeer}
           currentProfileId={currentProfileId}
-          onClose={() => setActiveChatConnection(null)}
+          onClose={() => {
+            setActiveChatPeer(null)
+            if (currentProfileId) loadConversationsData(currentProfileId)
+          }}
         />
       )}
     </div>

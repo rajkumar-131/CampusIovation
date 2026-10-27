@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { fetchPeerMessages, sendPeerMessage } from '../api'
+import { fetchDirectMessages, sendDirectMessage } from '../api'
 
 const QUICK_STARTERS = [
   'Hey! Up for studying together? 📚',
@@ -8,7 +8,7 @@ const QUICK_STARTERS = [
   'Brainstorming campus green ideas 🌱',
 ]
 
-export default function PeerChatModal({ connection, currentProfileId, onClose }) {
+export default function PeerChatModal({ peer, connection, currentProfileId, onClose }) {
   const [messages, setMessages] = useState([])
   const [inputText, setInputText] = useState('')
   const [loading, setLoading] = useState(true)
@@ -16,20 +16,22 @@ export default function PeerChatModal({ connection, currentProfileId, onClose })
   const [error, setError] = useState(null)
   const messagesEndRef = useRef(null)
 
-  const peer = connection.peer_profile
-  const connectionId = connection.connection_id
+  // Resolve peer info from either prop
+  const targetPeer = peer || connection?.peer_profile || {}
+  const targetPeerId = targetPeer.id || targetPeer.profile_id
 
   const scrollToBottom = (smooth = true) => {
     messagesEndRef.current?.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto' })
   }
 
-  // Poll for messages every 2.5 seconds
+  // Poll for messages every 2 seconds
   useEffect(() => {
+    if (!targetPeerId || !currentProfileId) return
     let isMounted = true
 
     const loadMessages = async (initial = false) => {
       try {
-        const data = await fetchPeerMessages(connectionId, currentProfileId)
+        const data = await fetchDirectMessages(targetPeerId, currentProfileId)
         if (isMounted) {
           setMessages(prev => {
             if (prev.length !== data.length || (data.length > 0 && prev[prev.length - 1]?.id !== data[data.length - 1]?.id)) {
@@ -48,24 +50,24 @@ export default function PeerChatModal({ connection, currentProfileId, onClose })
     }
 
     loadMessages(true)
-    const interval = setInterval(() => loadMessages(false), 2500)
+    const interval = setInterval(() => loadMessages(false), 2000)
 
     return () => {
       isMounted = false
       clearInterval(interval)
     }
-  }, [connectionId, currentProfileId])
+  }, [targetPeerId, currentProfileId])
 
   const handleSend = async (textToSend) => {
     const text = (textToSend || inputText).trim()
-    if (!text || sending) return
+    if (!text || sending || !targetPeerId || !currentProfileId) return
 
     setSending(true)
     setInputText('')
     setError(null)
 
     try {
-      const newMsg = await sendPeerMessage(connectionId, currentProfileId, text)
+      const newMsg = await sendDirectMessage(targetPeerId, currentProfileId, text)
       setMessages(prev => [...prev, newMsg])
       setTimeout(() => scrollToBottom(true), 50)
     } catch (err) {
@@ -89,18 +91,18 @@ export default function PeerChatModal({ connection, currentProfileId, onClose })
         <div className="px-5 py-4 border-b border-gray-100 bg-gradient-to-r from-emerald-50 via-teal-50 to-white flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-emerald-500 to-teal-500 text-white font-extrabold text-base flex items-center justify-center shadow-md shadow-emerald-500/20">
-              {peer.name.charAt(0)}
+              {targetPeer.name?.charAt(0) || '👤'}
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h3 className="font-bold text-gray-900 text-sm">{peer.name}</h3>
+                <h3 className="font-bold text-gray-900 text-sm">{targetPeer.name || 'Student'}</h3>
                 <span className="inline-flex items-center gap-1 text-[10px] bg-emerald-100 text-emerald-800 font-semibold px-2 py-0.5 rounded-full">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                  Connected Peer
+                  Direct Chat
                 </span>
               </div>
               <p className="text-[11px] text-gray-500">
-                {peer.study_year} • {peer.department}
+                {targetPeer.study_year || ''} {targetPeer.department ? `• ${targetPeer.department}` : ''}
               </p>
             </div>
           </div>
@@ -119,7 +121,7 @@ export default function PeerChatModal({ connection, currentProfileId, onClose })
           {loading ? (
             <div className="h-full flex flex-col items-center justify-center text-gray-400 gap-2">
               <span className="animate-spin text-2xl">🌿</span>
-              <p className="text-xs font-semibold">Connecting peer channel...</p>
+              <p className="text-xs font-semibold">Opening direct peer chat...</p>
             </div>
           ) : messages.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-center p-6 text-gray-400 space-y-3">
@@ -127,9 +129,9 @@ export default function PeerChatModal({ connection, currentProfileId, onClose })
                 💬
               </div>
               <div>
-                <h4 className="font-bold text-gray-700 text-sm">Say hello to {peer.name}!</h4>
+                <h4 className="font-bold text-gray-700 text-sm">Start chatting with {targetPeer.name || 'your friend'}!</h4>
                 <p className="text-xs text-gray-400 mt-1 max-w-xs leading-relaxed">
-                  You are mutually connected on Campus Connect. Plan a meetup or break the ice below.
+                  Send a message directly. You both can chat in real time across devices and tabs.
                 </p>
               </div>
 
@@ -211,7 +213,7 @@ export default function PeerChatModal({ connection, currentProfileId, onClose })
             value={inputText}
             onChange={(e) => setInputText(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder={`Message ${peer.name.split(' ')[0]}...`}
+            placeholder={`Message ${targetPeer.name?.split(' ')[0] || 'friend'}...`}
             disabled={sending}
             maxLength={1000}
             className="flex-1 bg-gray-50 border border-gray-200 rounded-2xl px-4 py-2.5 text-xs text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition"

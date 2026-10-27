@@ -451,3 +451,62 @@ export async function sendPeerMessage(connectionId, senderId, content) {
 
   return response.json();
 }
+
+/**
+ * Fetch direct message thread between two students (without requiring connection handshake)
+ */
+export async function fetchDirectMessages(peerId, myId) {
+  const response = await fetchWithTimeout(
+    `${API_BASE}/connect/direct-chat/${peerId}?my_id=${encodeURIComponent(myId)}`,
+    {},
+    15000
+  );
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Failed to load messages (${response.status}): ${errorText}`);
+  }
+  return response.json();
+}
+
+/**
+ * Directly send a message to any student/friend (auto-connects them)
+ */
+export async function sendDirectMessage(peerId, myId, content) {
+  const response = await fetchWithTimeout(
+    `${API_BASE}/connect/direct-chat/${peerId}`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ sender_id: parseInt(myId, 10), content }),
+    },
+    15000
+  );
+
+  if (!response.ok) {
+    let errorMessage = `Failed to send direct message (${response.status})`;
+    try {
+      const errorJson = await response.json();
+      if (errorJson.detail) errorMessage = errorJson.detail;
+    } catch {}
+    throw new Error(errorMessage);
+  }
+
+  return response.json();
+}
+
+/**
+ * Fetch all direct conversations for a student
+ */
+export async function fetchConversations(profileId) {
+  const response = await fetchWithTimeout(
+    `${API_BASE}/connect/conversations?profile_id=${encodeURIComponent(profileId)}`,
+    {},
+    15000
+  );
+  if (!response.ok) {
+    return [];
+  }
+  return response.json();
+}

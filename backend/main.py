@@ -56,6 +56,7 @@ from models import (
     ConnectionOut,
     PeerMessageCreate,
     PeerMessageOut,
+    DirectConversationOut,
     ChatRequest,
     ChatResponse,
 )
@@ -1009,4 +1010,172 @@ def send_peer_message(
         is_read=False,
         created_at=now_str,
     )
+
+
+# =============================================================================
+# DIRECT CHAT ROUTES (INSTANT CHAT BETWEEN ANY TWO STUDENTS/FRIENDS)
+# =============================================================================
+
+@app.get("/api/connect/direct-chat/{peer_id}", response_model=list[PeerMessageOut], tags=["Direct Peer Chat"])
+def get_direct_messages(
+    peer_id: int,
+    my_id: int = Query(..., description="My student profile ID"),
+):
+    """Directly fetch message history between me and any student/friend without requiring prior handshake."""
+    with get_connection() as conn:
+        # Mark incoming messages from peer as read
+        conn.execute(
+            """
+            UPDATE peer_messages
+            SET is_read = 1
+            WHERE sender_id = ? AND receiver_id = ? AND is_read = 0
+            """,
+            (peer_id, my_id),
+        )
+        conn.commit()
+
+        rows = conn.execute(
+            """
+            SELECT id, connection_id, sender_id, receiver_id, content, is_read, created_at
+            FROM peer_messages
+            WHERE (sender_id = ? AND receiver_id = ?)
+               OR (sender_id = ? AND receiver_id = ?)
+            ORDER BY id ASC
+            """,
+            (my_id, peer_id, peer_id, my_id),
+        ).fetchall()
+
+    return [
+        PeerMessageOut(
+            id=r["id"],
+            connection_id=r["connection_id"],
+            sender_id=r["sender_id"],
+            receiver_id=r["receiver_id"],
+            content=r["content"],
+            is_read=bool(r["is_read"]),
+            created_at=str(r["created_at"]),
+        )
+        for r in rows
+    ]
+
+
+@app.post("/api/connect/direct-chat/{peer_id}", response_model=PeerMessageOut, status_code=201, tags=["Direct Peer Chat"])
+def send_direct_message(
+    peer_id: int,
+    payload: PeerMessageCreate,
+):
+    """Directly send a message to a student/friend, automatically creating/accepting the mutual connection."""
+    with get_connection() as conn:
+        # Verify sender and peer profiles exist
+        sender_prof = fetch_profile_by_id(conn, payload.sender_id)
+        peer_prof = fetch_profile_by_id(conn, peer_id)
+        if not sender_prof or not peer_prof:
+            raise HTTPException(status_code=404, detail="Student profile not found")
+
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        # Check or auto-establish connection request so it shows in connections list
+        existing_conn = conn.execute(
+            """
+            SELECT id, status FROM connection_requests
+            WHERE (sender_id = ? AND receiver_id = ?) OR (sender_id = ? AND receiver_id = ?)
+            """,
+            (payload.sender_id, peer_id, peer_id, payload.sender_id),
+        ).fetchone()
+
+        if existing_conn:
+            conn_id = existing_conn["id"]
+            if existing_conn["status"] != "ACCEPTED":
+                conn.execute(
+                    "UPDATE connection_requests SET status = 'ACCEPTED', updated_at = ? WHERE id = ?",
+                    (now_str, conn_id),
+                )
+        else:
+            cur = conn.execute(
+                """
+                INSERT INTO connection_requests (sender_id, receiver_id, status, message, created_at, updated_at)
+                VALUES (?, ?, 'ACCEPTED', 'Direct Chat Connection', ?, ?)
+                """,
+                (payload.sender_id, peer_id, now_str, now_str),
+            )
+            conn_id = cur.lastrowid
+
+        # Insert direct message
+        cur_msg = conn.execute(
+            """
+            INSERT INTO peer_messages (connection_id, sender_id, receiver_id, content, is_read, created_at)
+            VALUES (?, ?, ?, ?, 0, ?)
+            """,
+            (conn_id, payload.sender_id, peer_id, payload.content.strip(), now_str),
+        )
+        conn.commit()
+        msg_id = cur_msg.lastrowid
+
+    return PeerMessageOut(
+        id=msg_id,
+        connection_id=conn_id,
+        sender_id=payload.sender_id,
+        receiver_id=peer_id,
+        content=payload.content.strip(),
+        is_read=False,
+        created_at=now_str,
+    )
+
+
+@app.get("/api/connect/conversations", response_model=list[DirectConversationOut], tags=["Direct Peer Chat"])
+def get_conversations(
+    profile_id: int = Query(..., description="My profile ID"),
+):
+    """Retrieve all conversations and recent peer chats for the user."""
+    with get_connection() as conn:
+        # Find all distinct peers
+        rows = conn.execute(
+            """
+            SELECT DISTINCT
+              CASE WHEN sender_id = ? THEN receiver_id ELSE sender_id END AS peer_id
+            FROM peer_messages
+            WHERE sender_id = ? OR receiver_id = ?
+            """,
+            (profile_id, profile_id, profile_id),
+        ).fetchall()
+
+        peer_ids = [r["peer_id"] for r in rows]
+
+        conversations = []
+        for pid in peer_ids:
+            peer_prof = fetch_profile_by_id(conn, pid)
+            if not peer_prof:
+                continue
+
+            last_msg_row = conn.execute(
+                """
+                SELECT content, created_at FROM peer_messages
+                WHERE (sender_id = ? AND receiver_id = ?) OR (sender_id = ? AND receiver_id = ?)
+                ORDER BY id DESC LIMIT 1
+                """,
+                (profile_id, pid, pid, profile_id),
+            ).fetchone()
+
+            unread_count = conn.execute(
+                """
+                SELECT COUNT(*) FROM peer_messages
+                WHERE sender_id = ? AND receiver_id = ? AND is_read = 0
+                """,
+                (pid, profile_id),
+            ).fetchone()[0]
+
+            conversations.append(
+                DirectConversationOut(
+                    peer_profile=peer_prof,
+                    last_message=last_msg_row["content"] if last_msg_row else None,
+                    last_message_time=str(last_msg_row["created_at"]) if last_msg_row else None,
+                    unread_count=unread_count,
+                )
+            )
+
+        # Sort by last_message_time DESC
+        conversations.sort(key=lambda c: c.last_message_time or "", reverse=True)
+
+    return conversations
+
 
